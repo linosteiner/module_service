@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.api import router
+from app.api import module_router, user_module_router
 from app.config import get_settings
 
 settings = get_settings()
@@ -16,8 +16,8 @@ app = FastAPI(
     description="Manages modules.",
     version=settings.app_version,
 )
-app.include_router(router)
-
+app.include_router(module_router)
+app.include_router(user_module_router)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:

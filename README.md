@@ -11,6 +11,7 @@ Der Service verwaltet Module über eine REST-API und speichert sie in MySQL.
 | `GET` | `/api/v1/modules/{module_id}` | Modul lesen | `200` |
 | `PATCH` | `/api/v1/modules/{module_id}` | Modul teilweise aktualisieren | `200` |
 | `DELETE` | `/api/v1/modules/{module_id}` | Modul löschen | `204` |
+| `PUT` | `/api/v1/users/{user_id}/modules/{module_id}` | Modul einem User zuweisen | `204` |
 
 Ein Modul enthält folgende Felder:
 
@@ -26,6 +27,10 @@ Ein Modul enthält folgende Felder:
 ```
 
 Die OpenAPI-Dokumentation ist unter `/docs` erreichbar.
+
+Die Zuweisung ist idempotent: Wiederholte `PUT`-Requests für denselben User und dasselbe
+Modul erzeugen nur einen Eintrag in `users_modules`. Die User-ID stammt aus dem
+`user_mgmt_service`; der Module Service prüft nur, ob das angegebene Modul existiert.
 
 ## Anwendung starten
 

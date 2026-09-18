@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Module
+from app.models import Module, UserModule
 from app.schemas import ModuleCreate, ModuleUpdate
 
 
@@ -35,6 +35,15 @@ def update_module(db: Session, module: Module, payload: ModuleUpdate) -> Module:
 
 def delete_module(db: Session, module: Module) -> None:
     db.delete(module)
+    db.commit()
+
+
+def assign_module_to_user(db: Session, user_id: UUID, module_id: UUID) -> None:
+    key = (str(user_id), str(module_id))
+    if db.get(UserModule, key) is not None:
+        return
+
+    db.add(UserModule(user_id=key[0], module_id=key[1]))
     db.commit()
 
 

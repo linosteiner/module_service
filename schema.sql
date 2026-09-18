@@ -9,6 +9,16 @@ CREATE TABLE IF NOT EXISTS modules (
     UNIQUE INDEX ix_modules_code (code)
 );
 
+CREATE TABLE IF NOT EXISTS users_modules (
+    user_id CHAR(36) NOT NULL,
+    module_id CHAR(36) NOT NULL,
+    assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, module_id),
+    INDEX ix_users_modules_module_id (module_id),
+    CONSTRAINT fk_users_modules_module
+        FOREIGN KEY (module_id) REFERENCES modules (id) ON DELETE CASCADE
+);
+
 INSERT IGNORE INTO modules (id, code, name, description)
 VALUES
     (
