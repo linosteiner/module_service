@@ -1,0 +1,148 @@
+name: Build and Promote
+
+# Tests, builds and publishes the image, then writes the new tag into the Ops repository.
+# Same pipeline as user_mgmt_service and auth_portal: nothing here talks to the cluster --
+# ArgoCD moves it by reconciling against the promotion commit.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: xxpirl2knc5/module_service
+  OPS_REPO: bernetlennard/user_mgmt_ops
+  VALUES_FILE: charts/user-mgmt/values.yaml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Lint
+        run: |
+          uv run --frozen ruff check .
+          uv run --frozen ruff format --check .
+
+      - name: Test
+        run: uv run --frozen pytest --cov=app --cov-report=term-missing
+
+  build-and-push:
+    needs: test
+    # Pull requests only run the tests; publishing and promotion happen on main.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          # The cluster only ever references the immutable SHA tag; :latest is for local use.
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  promote:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Promotion is a read-modify-write of one line in a shared repo; serialise the runs.
+    concurrency:
+      group: promote-ops
+      cancel-in-progress: false
+    steps:
+      # The Ops repo has a different owner, so GITHUB_TOKEN cannot write to it.
+      # OPS_REPO_TOKEN is a fine-grained PAT scoped to that repo, Contents: read/write.
+      - name: Checkout Ops repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.OPS_REPO }}
+          ref: main
+          token: ${{ secrets.OPS_REPO_TOKEN }}
+          path: ops
+
+      # sed and not yq, for the same reason as in the other two pipelines: yq would reflow
+      # the chart's comments. Anchored to the moduleService block, where `    tag: ` is unique
+      # to moduleService.image.tag.
+      - name: Rewrite module_service image tag
+        id: rewrite
+        working-directory: ops
+        run: |
+          sed -i -E '/^moduleService:/,/^[a-z]/ s|^(    tag: ).*$|\1"'"$GITHUB_SHA"'"|' "$VALUES_FILE"
+
+          if git diff --quiet -- "$VALUES_FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already promoted to $GITHUB_SHA -- nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A substitution that stops matching, or matches too much, must fail the build rather
+      # than silently mangle the chart.
+      - name: Verify exactly one line changed
+        if: steps.rewrite.outputs.changed == 'true'
+        working-directory: ops
+        run: |
+          numstat=$(git diff --numstat -- "$VALUES_FILE" | tr '\t' ' ')
+          echo "$numstat"
+          if [ "$numstat" != "1 1 $VALUES_FILE" ]; then
+            echo "::error::Expected exactly one changed line in $VALUES_FILE, got: '$numstat'"
+            git diff -- "$VALUES_FILE"
+            exit 1
+          fi
+          grep -q "tag: \"$GITHUB_SHA\"" "$VALUES_FILE"
+
+      - name: Commit and push promotion
+        if: steps.rewrite.outputs.changed == 'true'
+        working-directory: ops
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$VALUES_FILE"
+          git commit -F - <<MSG
+          Promote module-service to ${GITHUB_SHA:0:7}
+
+          Automated promotion from $GITHUB_REPOSITORY@$GITHUB_SHA
+          $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          MSG
+
+          # A commit landing between our checkout and our push (e.g. a backend promotion) must
+          # not fail this one -- rebase onto it and try again.
+          for attempt in 1 2 3; do
+            if git push origin main; then
+              echo "Promoted on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected, rebasing (attempt $attempt)..."
+            git pull --rebase origin main
+          done
+          echo "::error::Could not push the promotion after 3 attempts."
+          exit 1

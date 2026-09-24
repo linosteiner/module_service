@@ -79,6 +79,11 @@ def remove_module(module_id: UUID, db: DbSession) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@user_module_router.get("/{user_id}/modules", response_model=list[ModuleResponse])
+def retrieve_user_modules(user_id: UUID, db: DbSession) -> list[Module]:
+    return repository.list_user_modules(db, user_id)
+
+
 @user_module_router.put(
     "/{user_id}/modules/{module_id}",
     status_code=status.HTTP_204_NO_CONTENT,

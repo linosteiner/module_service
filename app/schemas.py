@@ -51,6 +51,7 @@ class ModuleUpdate(BaseModel):
             raise ValueError("name must contain at least two non-whitespace characters")
         return normalized
 
+
 class ModuleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

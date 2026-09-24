@@ -38,6 +38,16 @@ def delete_module(db: Session, module: Module) -> None:
     db.commit()
 
 
+def list_user_modules(db: Session, user_id: UUID) -> list[Module]:
+    statement = (
+        select(Module)
+        .join(UserModule, UserModule.module_id == Module.id)
+        .where(UserModule.user_id == str(user_id))
+        .order_by(Module.code)
+    )
+    return list(db.scalars(statement))
+
+
 def assign_module_to_user(db: Session, user_id: UUID, module_id: UUID) -> None:
     key = (str(user_id), str(module_id))
     if db.get(UserModule, key) is not None:
