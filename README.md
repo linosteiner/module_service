@@ -105,7 +105,7 @@ docker run --rm -p 8080:8080 --env-file .env module_service
 ## Pipeline
 
 `.github/workflows/build-and-promote.yml` läuft bei jedem Push auf `main`: Tests und Lint,
-dann Build und Push von `xxpirl2knc5/module_service:<commit-sha>` nach Docker Hub, dann ein
+dann Build und Push von `bernetlennard/module_service:<commit-sha>` nach Docker Hub, dann ein
 Commit ins Ops-Repository (`bernetlennard/user_mgmt_ops`), der `moduleService.image.tag`
 setzt. ArgoCD rollt das Image von dort aus. Benötigte Repository-Secrets: `DOCKERHUB_USERNAME`,
 `DOCKERHUB_TOKEN`, `OPS_REPO_TOKEN` (dieselben wie in `user_mgmt_service`).
